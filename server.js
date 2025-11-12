@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import mysql from "mysql2/promise";
 
 dotenv.config();
 
@@ -8,46 +9,98 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Rota básica para testar
-app.get("/", (req, res) => {
-  res.send("API funcionando! 🚀");
+// Conexão com banco usando variáveis do .env
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME
 });
 
-// Login
-app.post("/login", (req, res) => {
+// Teste de conexão
+pool.getConnection()
+  .then(conn => {
+    console.log("✅ MySQL conectado!");
+    conn.release();
+  })
+  .catch(err => {
+    console.error("❌ Erro ao conectar no MySQL:", err);
+  });
+
+// Rota básica
+app.get("/", (req, res) => {
+  res.send("API do projeto-mobile funcionando! 🚀");
+});
+
+// LOGIN
+app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
-  // Aqui entra a lógica real de autenticação
-  return res.json({
-    success: true,
-    message: "Login realizado!",
-    user: username
-  });
+  try {
+    const [rows] = await pool.query(
+      "SELECT * FROM usuarios WHERE username = ? AND password = ?",
+      [username, password]
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: "Usuário ou senha inválidos"
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Login realizado com sucesso!",
+      user: rows[0]
+    });
+  } catch (err) {
+    console.error("Erro no login:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Erro no servidor ao fazer login"
+    });
+  }
 });
 
-// Cadastro
-app.post("/register", (req, res) => {
+// CADASTRO
+app.post("/register", async (req, res) => {
   const { nome, sobrenome, endereco, profissao, username, password } = req.body;
 
-  // Salvar no banco (quando você tiver um)
-  console.log("Novo usuário cadastrado:", {
-    nome,
-    sobrenome,
-    endereco,
-    profissao,
-    username,
-    password
-  });
+  try {
+    // Verifica se username já existe
+    const [existe] = await pool.query(
+      "SELECT id FROM usuarios WHERE username = ?",
+      [username]
+    );
 
-  return res.json({
-    success: true,
-    message: "Cadastro concluído com sucesso!"
-  });
+    if (existe.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Nome de usuário já cadastrado"
+      });
+    }
+
+    await pool.query(
+      "INSERT INTO usuarios (nome, sobrenome, endereco, profissao, username, password) VALUES (?, ?, ?, ?, ?, ?)",
+      [nome, sobrenome, endereco, profissao, username, password]
+    );
+
+    return res.json({
+      success: true,
+      message: "Cadastro realizado com sucesso!"
+    });
+  } catch (err) {
+    console.error("Erro no cadastro:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Erro no servidor ao cadastrar"
+    });
+  }
 });
 
-// Porta (Railway gerencia automaticamente)
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
+
